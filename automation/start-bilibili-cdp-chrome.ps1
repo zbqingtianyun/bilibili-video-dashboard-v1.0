@@ -48,6 +48,40 @@ function Test-CdpPort {
     }
 }
 
+function Get-CdpOwnerProcess {
+    param([int]$PortToCheck)
+
+    $connection = Get-NetTCPConnection -LocalPort $PortToCheck -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    if (-not $connection) {
+        return $null
+    }
+
+    return Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
+}
+
+function Stop-DedicatedChrome {
+    param([string]$ProfileRoot)
+
+    $processes = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$ProfileRoot*" }
+
+    foreach ($process in $processes) {
+        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-DownloadProtectionFlags {
+    param([string]$CommandLine)
+
+    return (
+        $CommandLine -like "*--safebrowsing-disable-download-protection*" -and
+        $CommandLine -like "*--disable-client-side-phishing-detection*" -and
+        $CommandLine -like "*--disable-features=DownloadBubble,DownloadBubbleV2*"
+    )
+}
+
 function Ensure-DownloadPreferences {
     param(
         [string]$ProfileRoot,
@@ -99,21 +133,37 @@ if (-not (Test-Path -LiteralPath $ProjectRoot)) {
     throw "项目目录不存在：$ProjectRoot"
 }
 
+if (-not (Test-Path -LiteralPath $ProfileDir)) {
+    New-Item -ItemType Directory -Path $ProfileDir | Out-Null
+}
+
+Ensure-DownloadPreferences -ProfileRoot $ProfileDir -DownloadDir $ProjectRoot
+
 if (Test-CdpPort -PortToCheck $Port) {
-    Write-Host "CDP 已可用: http://127.0.0.1:$Port"
-    exit 0
+    $owner = Get-CdpOwnerProcess -PortToCheck $Port
+    if ($owner -and $owner.CommandLine -like "*$ProfileDir*") {
+        if (Test-DownloadProtectionFlags -CommandLine $owner.CommandLine) {
+            Write-Host "CDP 已可用且下载保护参数已生效: http://127.0.0.1:$Port"
+            exit 0
+        }
+
+        if ($CheckOnly) {
+            Write-Host "CDP 可用但下载保护参数未生效，需要重启专用 Chrome: http://127.0.0.1:$Port"
+            exit 1
+        }
+
+        Write-Host "CDP 已运行但下载保护参数未生效，正在重启专用 Chrome。"
+        Stop-DedicatedChrome -ProfileRoot $ProfileDir
+        Start-Sleep -Seconds 2
+    } elseif ($owner) {
+        throw "端口 $Port 已被非 B站专用 Chrome 占用，进程 $($owner.ProcessId)。"
+    }
 }
 
 if ($CheckOnly) {
     Write-Host "CDP 不可用: http://127.0.0.1:$Port"
     exit 1
 }
-
-if (-not (Test-Path -LiteralPath $ProfileDir)) {
-    New-Item -ItemType Directory -Path $ProfileDir | Out-Null
-}
-
-Ensure-DownloadPreferences -ProfileRoot $ProfileDir -DownloadDir $ProjectRoot
 
 $chromeExe = Find-ChromeExe
 $args = @(
