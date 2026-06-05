@@ -1,0 +1,141 @@
+﻿<#
+.SYNOPSIS
+    Start a dedicated Chrome instance for Bilibili automation over CDP.
+.DESCRIPTION
+    Uses a dedicated Chrome user-data-dir and a local-only remote debugging
+    port. The profile is separate from the user's daily Chrome profile. The
+    first run requires manual Bilibili login in the opened Chrome window.
+#>
+
+param(
+    [int]$Port = 9222,
+    [string]$ProjectRoot = "F:\zhangbin_codex\b站数据看板1.0版本",
+    [string]$ProfileDir = "F:\zhangbin_codex\b站数据看板1.0版本\.chrome-bilibili-profile",
+    [switch]$CheckOnly
+)
+
+$ErrorActionPreference = "Stop"
+
+function Find-ChromeExe {
+    $candidates = @(
+        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+    )
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return $candidate
+        }
+    }
+
+    $cmd = Get-Command chrome.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
+    }
+
+    throw "未找到 chrome.exe"
+}
+
+function Test-CdpPort {
+    param([int]$PortToCheck)
+
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$PortToCheck/json/version" -TimeoutSec 2
+        return $response.StatusCode -eq 200
+    } catch {
+        return $false
+    }
+}
+
+function Ensure-DownloadPreferences {
+    param(
+        [string]$ProfileRoot,
+        [string]$DownloadDir
+    )
+
+    $defaultDir = Join-Path $ProfileRoot "Default"
+    $preferencesPath = Join-Path $defaultDir "Preferences"
+
+    if (-not (Test-Path -LiteralPath $defaultDir)) {
+        New-Item -ItemType Directory -Path $defaultDir | Out-Null
+    }
+
+    $preferences = @{}
+    if (Test-Path -LiteralPath $preferencesPath) {
+        try {
+            $raw = Get-Content -LiteralPath $preferencesPath -Raw -ErrorAction Stop
+            if ($raw.Trim()) {
+                $preferences = ConvertFrom-Json $raw -ErrorAction Stop
+            }
+        } catch {
+            $preferences = @{}
+        }
+    }
+
+    $preferencesJson = @{
+        download = @{
+            default_directory = $DownloadDir
+            prompt_for_download = $false
+            directory_upgrade = $true
+        }
+        safebrowsing = @{
+            enabled = $true
+        }
+    }
+
+    if ($preferences -and $preferences.PSObject.Properties.Count -gt 0) {
+        $preferences | Add-Member -NotePropertyName download -NotePropertyValue $preferencesJson.download -Force
+        $preferences | Add-Member -NotePropertyName safebrowsing -NotePropertyValue $preferencesJson.safebrowsing -Force
+        $preferencesJson = $preferences
+    }
+
+    $preferencesJson | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $preferencesPath -Encoding UTF8
+}
+
+if (-not (Test-Path -LiteralPath $ProjectRoot)) {
+    throw "项目目录不存在：$ProjectRoot"
+}
+
+if (Test-CdpPort -PortToCheck $Port) {
+    Write-Host "CDP 已可用: http://127.0.0.1:$Port"
+    exit 0
+}
+
+if ($CheckOnly) {
+    Write-Host "CDP 不可用: http://127.0.0.1:$Port"
+    exit 1
+}
+
+if (-not (Test-Path -LiteralPath $ProfileDir)) {
+    New-Item -ItemType Directory -Path $ProfileDir | Out-Null
+}
+
+Ensure-DownloadPreferences -ProfileRoot $ProfileDir -DownloadDir $ProjectRoot
+
+$chromeExe = Find-ChromeExe
+$args = @(
+    "--remote-debugging-port=$Port",
+    "--remote-debugging-address=127.0.0.1",
+    "--user-data-dir=$ProfileDir",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-popup-blocking",
+    "https://member.bilibili.com/platform/data-up/video/"
+)
+
+Start-Process -FilePath $chromeExe -ArgumentList $args -WindowStyle Hidden | Out-Null
+
+$deadline = (Get-Date).AddSeconds(25)
+while ((Get-Date) -lt $deadline) {
+    if (Test-CdpPort -PortToCheck $Port) {
+        Write-Host "CDP 已启动: http://127.0.0.1:$Port"
+        Write-Host "Profile: $ProfileDir"
+        Write-Host "Download directory: $ProjectRoot"
+        exit 0
+    }
+    Start-Sleep -Milliseconds 500
+}
+
+throw "Chrome 已启动但 CDP 端口未在 25 秒内可用：http://127.0.0.1:$Port"
+
