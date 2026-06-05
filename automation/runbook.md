@@ -1,7 +1,7 @@
 # B站视频数据自动化拉取 Runbook
 
 ## 目标
-每天 6:00 由 Codex cron 自动化打开 Chrome，进入 B站创作中心的数据中心「近期稿件对比」模块，勾选全部自选指标并导出 CSV，然后更新仪表盘数据文件并推送到 GitHub。
+每天 6:00 由 Codex cron 自动化通过 Google Chrome 插件通道打开 Chrome，进入 B站创作中心的数据中心「近期稿件对比」模块，勾选全部自选指标并导出 CSV，然后更新仪表盘数据文件并推送到 GitHub。
 
 当前 Codex 自动化 ID：`b-2`
 
@@ -10,14 +10,14 @@
 ## 前提条件
 1. Windows 本机在每天 6:00 已开机、联网，Codex 可运行本地 cron 自动化。
 2. Chrome 已登录 B站创作中心账号，且导出流程不触发验证码或二次验证。
-3. Codex Chrome Extension 控制通道可用。
+3. Codex Chrome Extension / Google Chrome 插件控制通道可用。
 4. 本仓库位于 `F:\zhangbin_codex\b站数据看板1.0版本`。
 5. GitHub 已配置 `origin/master` 推送权限。
 
-## 步骤 A：Chrome 浏览器自动化
+## 步骤 A：Google Chrome 插件自动化
 
 ### A1. 连接 Chrome 扩展
-使用 Codex Chrome 工具连接用户 Chrome。若连接失败，停止任务并报告失败原因。
+必须使用 Codex Chrome Extension / Google Chrome 插件通道连接用户 Chrome。若连接失败，停止任务并报告失败原因，不改用 Codex in-app Browser、独立 Playwright 浏览器、CDP 临时浏览器或无登录态的新浏览器环境。
 
 ### A2. 查找现有 B站 标签或打开新标签
 - 如果已有 B站 创作中心标签，claim 它
