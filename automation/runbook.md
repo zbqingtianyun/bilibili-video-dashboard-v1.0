@@ -56,6 +56,7 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1
 5. 如果有变化，替换数据文件并执行 `git add`、`git commit`、`git push origin master`
 
 ## 失败处理
+- 浏览器提示「用户已请求禁止使用该站点」：检查 `C:\Users\26230\.codex\browser\sessions\*.toml`，如果对应会话把 `https://member.bilibili.com` 写在 `denied`，需要改为 `allowed` 或删除该拒绝记录后重试。
 - 登录失效：停止任务，手动在 Chrome 登录 B站后再重试。
 - 验证码或二次验证：停止任务，不尝试绕过。
 - 页面结构变化：停止任务，重新人工确认按钮和菜单路径。
