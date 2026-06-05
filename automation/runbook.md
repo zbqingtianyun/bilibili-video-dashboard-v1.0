@@ -45,6 +45,8 @@ Chrome 下载目录就是项目根目录，CSV 必须直接保存到：
 `近期稿件对比.csv`
 `public/data/recent-videos.csv`
 
+`public/data/recent-videos.csv` 是仪表盘前端实际读取的数据源，必须由最新 CSV 替换。
+
 ## 步骤 B：数据更新 + GitHub 推送
 运行：
 
@@ -57,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1
 2. 验证 CSV 表头包含 `视频标题`、`发布时间`、`播放量`
 3. 与 `public/data/recent-videos.csv` 做 SHA256 对比
 4. 如果无变化，退出并跳过提交推送
-5. 如果有变化，替换 `近期稿件对比.csv` 和 `public/data/recent-videos.csv`，再执行 `git add`、`git commit`、`git push origin master`
+5. 如果有变化，替换 `近期稿件对比.csv` 和仪表盘实际数据源 `public/data/recent-videos.csv`，再执行 `git add`、`git commit`、`git push origin master`
 
 ## 失败处理
 - 浏览器提示「用户已请求禁止使用该站点」：检查 `C:\Users\26230\.codex\browser\sessions\*.toml`，如果对应会话把 `https://member.bilibili.com` 写在 `denied`，需要改为 `allowed` 或删除该拒绝记录后重试。
