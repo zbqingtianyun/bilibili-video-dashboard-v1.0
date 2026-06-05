@@ -4,6 +4,7 @@ dist
 .env
 .env.*
 .vercel
+.chrome-bilibili-profile
 .npm-cache
 npm-debug.log*
 *.local
