@@ -78,9 +78,11 @@ function Ensure-DownloadPreferences {
             default_directory = $DownloadDir
             prompt_for_download = $false
             directory_upgrade = $true
+            restrictions = 0
         }
         safebrowsing = @{
-            enabled = $true
+            enabled = $false
+            disable_download_protection = $true
         }
     }
 
@@ -121,6 +123,9 @@ $args = @(
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-popup-blocking",
+    "--safebrowsing-disable-download-protection",
+    "--disable-client-side-phishing-detection",
+    "--disable-features=DownloadBubble,DownloadBubbleV2",
     "https://member.bilibili.com/platform/data-up/video/"
 )
 

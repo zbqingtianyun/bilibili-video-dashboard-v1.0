@@ -30,6 +30,7 @@ powershell -ExecutionPolicy Bypass -File automation\start-bilibili-cdp-chrome.ps
 - 不可用时启动专用 Chrome。
 - 使用 profile：`F:\zhangbin_codex\b站数据看板1.0版本\.chrome-bilibili-profile`。
 - 将下载目录固定为项目根目录。
+- 在专用 profile 中关闭 Chrome 对 B站 CSV 下载的安全拦截，避免出现“出于安全原因”导致 CSV 下载失败。
 
 不得读取 cookies、localStorage、密码、浏览器配置文件或其他敏感会话数据。不得绕过验证码、二次验证或站点安全拦截。
 
@@ -93,6 +94,7 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1 -RunStar
 - 验证码或二次验证：停止任务，不尝试绕过。
 - 页面结构变化：停止任务，要求重新确认按钮和模块路径。
 - Chrome 下载目录不是项目根目录：停止任务，不从其他目录搬运 CSV。
+- Chrome 下载气泡提示 CSV“出于安全原因”被拦截：重新运行 `automation\start-bilibili-cdp-chrome.ps1`，确保专用 profile 已关闭下载保护；仍失败时停止任务并报告。
 - 导出后项目目录没有新 CSV：停止任务，避免把旧 CSV 误判为本次导出。
 - CSV 表头不匹配：停止任务，不替换、不提交。
 - Git 推送失败：停止任务，报告 GitHub 权限、网络或远程分支问题。
