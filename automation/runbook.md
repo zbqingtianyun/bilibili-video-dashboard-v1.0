@@ -72,6 +72,7 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1
 
 ## 失败处理
 - 浏览器提示「用户已请求禁止使用该站点」：先运行 `automation\allow-bilibili-browser-origin.ps1`，它会检查 `C:\Users\26230\.codex\browser\sessions\*.toml` 并把 `https://member.bilibili.com` 从 `denied` 修正为 `allowed`，然后只重试一次。
+- 如果放行脚本提示 `UnauthorizedAccessException` 或某个 session 文件无法写入：通常是当前 Chrome 插件会话正在占用该 session 文件。脚本会跳过该被锁文件并继续确保 `bilibili-creator-center.toml` 放行文件存在；若重试后仍被浏览器策略拦截，需要关闭当前被拦截的自动化浏览器会话后重新触发任务。
 - 登录失效：停止任务，手动在 Chrome 登录 B站后再重试。
 - 验证码或二次验证：停止任务，不尝试绕过。
 - 页面结构变化：停止任务，重新人工确认按钮和菜单路径。
