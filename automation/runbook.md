@@ -1,7 +1,7 @@
 # B站视频数据自动化拉取 Runbook
 
 ## 目标
-每天 6:00 由 Codex cron 自动化通过 Google Chrome 插件通道打开 Chrome，进入 B站创作中心的数据中心「近期稿件对比」模块，勾选全部自选指标并导出 CSV，然后更新仪表盘数据文件并推送到 GitHub。
+每天 6:00 由 Codex cron 自动化通过 Google Chrome 插件通道打开 Chrome，进入 B站创作中心的数据中心「近期稿件对比」模块，勾选全部自选指标并导出 CSV，然后替换项目目录里的原始 CSV，同步更新仪表盘数据文件并推送到 GitHub。
 
 当前 Codex 自动化 ID：`b-2`
 
@@ -33,13 +33,16 @@
 `视频标题, 发布时间, 播放量`
 
 ### A5. 点击「导出」按钮
-点击右上或表格上方的「导出」/「下载」/「导出数据」按钮，选择 CSV 格式
+点击右上或表格上方的「导出」/「下载」/「导出数据」按钮，选择 CSV 格式。
+优先将 CSV 保存到项目根目录：`F:\zhangbin_codex\b站数据看板1.0版本\近期稿件对比.csv`
 
 ### A6. 等待下载完成
-监听 Chrome 下载事件，等待文件出现在下载目录
+监听 Chrome 下载事件，等待文件出现在项目目录或 Chrome 默认下载目录
 
-### A7. 将下载的 CSV 复制到项目
-目标路径：`public/data/recent-videos.csv`
+### A7. 将下载的 CSV 同步到项目
+目标路径：
+`近期稿件对比.csv`
+`public/data/recent-videos.csv`
 
 ## 步骤 B：数据更新 + GitHub 推送
 运行：
@@ -49,11 +52,11 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1
 ```
 
 脚本完成：
-1. 找到下载目录最新近期稿件对比 CSV
+1. 从项目目录和下载目录中找到最新近期稿件对比 CSV
 2. 验证 CSV 表头包含 `视频标题`、`发布时间`、`播放量`
 3. 与 `public/data/recent-videos.csv` 做 SHA256 对比
 4. 如果无变化，退出并跳过提交推送
-5. 如果有变化，替换数据文件并执行 `git add`、`git commit`、`git push origin master`
+5. 如果有变化，替换 `近期稿件对比.csv` 和 `public/data/recent-videos.csv`，再执行 `git add`、`git commit`、`git push origin master`
 
 ## 失败处理
 - 浏览器提示「用户已请求禁止使用该站点」：检查 `C:\Users\26230\.codex\browser\sessions\*.toml`，如果对应会话把 `https://member.bilibili.com` 写在 `denied`，需要改为 `allowed` 或删除该拒绝记录后重试。
