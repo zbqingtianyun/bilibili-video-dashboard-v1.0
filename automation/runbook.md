@@ -34,10 +34,11 @@
 
 ### A5. 点击「导出」按钮
 点击右上或表格上方的「导出」/「下载」/「导出数据」按钮，选择 CSV 格式。
-优先将 CSV 保存到项目根目录：`F:\zhangbin_codex\b站数据看板1.0版本\近期稿件对比.csv`
+Chrome 下载目录就是项目根目录，CSV 必须直接保存到：
+`F:\zhangbin_codex\b站数据看板1.0版本\近期稿件对比.csv`
 
 ### A6. 等待下载完成
-监听 Chrome 下载事件，等待文件出现在项目目录或 Chrome 默认下载目录
+监听 Chrome 下载事件，等待文件出现在项目目录
 
 ### A7. 将下载的 CSV 同步到项目
 目标路径：
@@ -52,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1
 ```
 
 脚本完成：
-1. 从项目目录和下载目录中找到最新近期稿件对比 CSV
+1. 从项目目录中找到最新近期稿件对比 CSV
 2. 验证 CSV 表头包含 `视频标题`、`发布时间`、`播放量`
 3. 与 `public/data/recent-videos.csv` 做 SHA256 对比
 4. 如果无变化，退出并跳过提交推送

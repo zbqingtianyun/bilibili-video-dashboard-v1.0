@@ -2,7 +2,7 @@
 .SYNOPSIS
     B站视频数据仪表盘 - 数据更新与推送脚本
 .DESCRIPTION
-    从项目目录或 Chrome 下载目录找到最新的「近期稿件对比」CSV，
+    从项目目录找到最新的「近期稿件对比」CSV，
     验证表头后替换项目根目录的原始 CSV 和 public/data/recent-videos.csv。
     只有数据发生变化时才提交并推送到 GitHub。
 .NOTES
@@ -29,16 +29,14 @@ if (-not (Test-Path -LiteralPath ".git")) {
     Fail "当前目录不是 Git 仓库：$projectRoot"
 }
 
-# 1. 找到最新的 B站 近期稿件 CSV。优先支持 Chrome 直接保存到项目目录，也兼容默认下载目录。
-$downloads = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'
+# 1. 找到项目目录中最新的 B站 近期稿件 CSV。Chrome 下载目录就是项目目录。
 $projectCsvs = Get-ChildItem -Path $projectRoot -Filter '近期稿件对比*.csv' -ErrorAction SilentlyContinue
-$downloadCsvs = Get-ChildItem -Path $downloads -Filter '近期稿件对比*.csv' -ErrorAction SilentlyContinue
-$latest = @($projectCsvs + $downloadCsvs) `
+$latest = @($projectCsvs) `
   | Sort-Object LastWriteTime -Descending `
   | Select-Object -First 1
 
 if (-not $latest) {
-    Fail "未在项目目录或下载目录找到「近期稿件对比」CSV 文件，请先完成 Chrome 导出步骤。"
+    Fail "未在项目目录找到「近期稿件对比」CSV 文件，请先完成 Chrome 导出步骤。"
 }
 
 Write-Host "找到 CSV: $($latest.FullName) (最后写入: $($latest.LastWriteTime))"
