@@ -10,7 +10,6 @@ import {
   RefreshCcw,
   Search,
   Sparkles,
-  Upload,
   UsersRound
 } from "lucide-react";
 import {
@@ -18,7 +17,6 @@ import {
   formatCompact,
   formatPercent,
   loadDefaultVideos,
-  parseCsv,
   sortMetricLabels,
   sortVideos,
   type SortMetric,
@@ -336,22 +334,6 @@ function App() {
     }
   }
 
-  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    try {
-      const text = await file.text();
-      const items = parseCsv(text);
-      setVideos(items);
-      setSelectedId(items[0]?.id ?? "");
-      setStatus(`已切换为上传数据：${file.name}，共 ${items.length} 条`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "上传 CSV 解析失败");
-    }
-  }
-
   return (
     <main className="app-shell">
       <div className="orb orb-pink" />
@@ -379,11 +361,6 @@ function App() {
             <Clock3 size={15} />
             {summary.dateRange}
           </span>
-          <label className="upload-button">
-            <Upload size={16} />
-            上传新 CSV
-            <input type="file" accept=".csv,text/csv" onChange={handleUpload} />
-          </label>
         </div>
       </motion.header>
 
