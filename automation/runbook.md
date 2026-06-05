@@ -16,40 +16,31 @@
 
 ## 步骤 A：Google Chrome 插件自动化
 
-### A1. 修正 Codex 浏览器来源权限
-先运行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File automation\allow-bilibili-browser-origin.ps1
-```
-
-该脚本会把本机 Codex 浏览器 session 中的 `https://member.bilibili.com` 从 `denied` 修正为 `allowed`，避免自动化每次新运行生成新的拒绝记录。
-
-### A2. 连接 Chrome 扩展
+### A1. 连接 Chrome 扩展
 必须使用 Codex Chrome Extension / Google Chrome 插件通道连接用户 Chrome。若连接失败，停止任务并报告失败原因，不改用 Codex in-app Browser、独立 Playwright 浏览器、CDP 临时浏览器或无登录态的新浏览器环境。
 
-### A3. 查找现有 B站 标签或打开新标签
+### A2. 查找现有 B站 标签或打开新标签
 - 如果已有 B站 创作中心标签，claim 它
 - 否则导航到 `https://member.bilibili.com/platform/data/video/compare`
 
-### A4. 进入数据中心 > 近期稿件对比
+### A3. 进入数据中心 > 近期稿件对比
 左侧菜单「数据中心」→「稿件数据」→「近期稿件对比」
 或直接导航到：`https://member.bilibili.com/platform/data/video/compare`
 
-### A5. 全选自选指标
+### A4. 全选自选指标
 页面「自选指标」区域，点击「自定义指标」展开指标选择面板
 将所有可用指标全部勾选，确保导出字段至少包含：
 `视频标题, 发布时间, 播放量`
 
-### A6. 点击「导出」按钮
+### A5. 点击「导出」按钮
 点击右上或表格上方的「导出」/「下载」/「导出数据」按钮，选择 CSV 格式。
 Chrome 下载目录就是项目根目录，CSV 必须直接保存到：
 `F:\zhangbin_codex\b站数据看板1.0版本\近期稿件对比.csv`
 
-### A7. 等待下载完成
+### A6. 等待下载完成
 监听 Chrome 下载事件，等待文件出现在项目目录
 
-### A8. 将下载的 CSV 同步到项目
+### A7. 将下载的 CSV 同步到项目
 目标路径：
 `近期稿件对比.csv`
 `public/data/recent-videos.csv`
@@ -71,8 +62,7 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1
 5. 如果有变化，替换 `近期稿件对比.csv` 和仪表盘实际数据源 `public/data/recent-videos.csv`，再执行 `git add`、`git commit`、`git push origin master`
 
 ## 失败处理
-- 浏览器提示「用户已请求禁止使用该站点」：先运行 `automation\allow-bilibili-browser-origin.ps1`，它会检查 `C:\Users\26230\.codex\browser\sessions\*.toml` 并把 `https://member.bilibili.com` 从 `denied` 修正为 `allowed`，然后只重试一次。
-- 如果放行脚本提示 `UnauthorizedAccessException` 或某个 session 文件无法写入：通常是当前 Chrome 插件会话正在占用该 session 文件。脚本会跳过该被锁文件并继续确保 `bilibili-creator-center.toml` 放行文件存在；若重试后仍被浏览器策略拦截，需要关闭当前被拦截的自动化浏览器会话后重新触发任务。
+- 浏览器提示「用户已请求禁止使用该站点」：停止任务并报告浏览器来源策略拦截，不尝试修改 Codex 浏览器 session 文件。
 - 登录失效：停止任务，手动在 Chrome 登录 B站后再重试。
 - 验证码或二次验证：停止任务，不尝试绕过。
 - 页面结构变化：停止任务，重新人工确认按钮和菜单路径。
