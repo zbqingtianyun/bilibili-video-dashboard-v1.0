@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     B站视频数据仪表盘 - 数据更新与推送脚本
 .DESCRIPTION
@@ -10,6 +10,11 @@
     步骤 A（Chrome 导出）需人工或 Codex Chrome 扩展完成。
     本脚本负责步骤 B（文件替换 + Git 推送）。
 #>
+
+param(
+    [string]$RunStartedAt,
+    [string]$PreviousDashboardHash
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -29,6 +34,19 @@ if (-not (Test-Path -LiteralPath ".git")) {
     Fail "当前目录不是 Git 仓库：$projectRoot"
 }
 
+if ($RunStartedAt) {
+    try {
+        $runStartedAtDate = [DateTime]::Parse($RunStartedAt)
+    } catch {
+        Fail "RunStartedAt 参数不是有效时间：$RunStartedAt"
+    }
+    Write-Host "本次自动化开始时间: $($runStartedAtDate.ToString('o'))"
+}
+
+if ($PreviousDashboardHash) {
+    Write-Host "旧仪表盘 CSV SHA256: $PreviousDashboardHash"
+}
+
 # 1. 找到项目目录中最新的 B站 近期稿件 CSV。Chrome 下载目录就是项目目录。
 $projectCsvs = Get-ChildItem -Path $projectRoot -Filter '近期稿件对比*.csv' -ErrorAction SilentlyContinue
 $latest = @($projectCsvs) `
@@ -41,6 +59,10 @@ if (-not $latest) {
 
 Write-Host "找到 CSV: $($latest.FullName) (最后写入: $($latest.LastWriteTime))"
 
+if ($RunStartedAt -and $latest.LastWriteTime -lt $runStartedAtDate) {
+    Fail "导出未完成：项目目录中最新 CSV 早于本次自动化开始时间。请确认 Chrome 下载目录固定为项目根目录，且导出动作成功。"
+}
+
 # 2. 验证 CSV 表头
 $header = Get-Content -LiteralPath $latest.FullName -TotalCount 1 -Encoding UTF8
 foreach ($part in $expectedHeaderParts) {
@@ -52,9 +74,9 @@ foreach ($part in $expectedHeaderParts) {
 Write-Host "CSV 表头验证通过。"
 
 # 3. 替换项目 CSV 和仪表盘数据文件；无变化时跳过提交和推送
+$sourceHash = (Get-FileHash -LiteralPath $latest.FullName -Algorithm SHA256).Hash
 $dashboardTargetExists = Test-Path -LiteralPath $dashboardTarget
 if ($dashboardTargetExists) {
-    $sourceHash = (Get-FileHash -LiteralPath $latest.FullName -Algorithm SHA256).Hash
     $dashboardHash = (Get-FileHash -LiteralPath $dashboardTarget -Algorithm SHA256).Hash
     if ($sourceHash -eq $dashboardHash) {
         $sourceTargetPath = if (Test-Path -LiteralPath $sourceTarget) { (Resolve-Path -LiteralPath $sourceTarget).Path } else { $null }
@@ -62,7 +84,7 @@ if ($dashboardTargetExists) {
             Copy-Item -LiteralPath $latest.FullName -Destination $sourceTarget -Force
             Write-Host "已同步项目根目录 CSV: $sourceTarget"
         }
-        Write-Host "CSV 与当前仪表盘数据一致，跳过提交和推送。"
+        Write-Host "本次导出 CSV 与当前仪表盘数据一致，跳过提交和推送。"
         exit 0
     }
 }
@@ -97,3 +119,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "推送完成: $commitMsg"
+
