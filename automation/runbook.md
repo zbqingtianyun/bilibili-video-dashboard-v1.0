@@ -101,7 +101,8 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1 -RunStar
 - Chrome 下载气泡提示 CSV“出于安全原因”被拦截：重新运行 `automation\start-bilibili-cdp-chrome.ps1`，确保专用 profile 已关闭下载保护；仍失败时停止任务并报告。
 - 导出后项目目录没有新 CSV：停止任务，避免把旧 CSV 误判为本次导出。
 - CSV 表头不匹配：停止任务，不替换、不提交。
-- Git 推送失败：停止任务，报告 GitHub 权限、网络或远程分支问题。
+- Git 暂存或提交失败：脚本会先确认 `.git/objects` 和 `.git/index.lock` 可写，并在 Git 临时占用时短暂重试；仍失败时停止任务，报告锁文件、权限或 Git 进程占用信息。
+- Git 推送失败：脚本会短暂重试；仍失败时停止任务，报告 GitHub 权限、网络或远程分支问题。
 
 ## 验证
 手动试运行自动化后检查：

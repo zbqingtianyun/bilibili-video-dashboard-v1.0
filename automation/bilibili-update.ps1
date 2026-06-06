@@ -28,6 +28,65 @@ function Fail($message) {
     exit 1
 }
 
+function Get-GitProcesses {
+    return Get-CimInstance Win32_Process -Filter "name = 'git.exe'" -ErrorAction SilentlyContinue
+}
+
+function Test-GitWriteAccess {
+    $objectProbe = Join-Path (Resolve-Path -LiteralPath ".git\objects").Path "codex-write-probe.tmp"
+    $indexProbe = Join-Path (Resolve-Path -LiteralPath ".git").Path "index.lock"
+
+    try {
+        Set-Content -LiteralPath $objectProbe -Value "probe" -Encoding ASCII -ErrorAction Stop
+        Remove-Item -LiteralPath $objectProbe -Force -ErrorAction Stop
+    } catch {
+        Fail ".git\objects 不可写，Git 无法创建对象：$($_.Exception.Message)"
+    }
+
+    if (Test-Path -LiteralPath $indexProbe) {
+        $lock = Get-Item -LiteralPath $indexProbe
+        $gitProcesses = @(Get-GitProcesses)
+        $lockAgeSeconds = ((Get-Date) - $lock.LastWriteTime).TotalSeconds
+
+        if ($gitProcesses.Count -eq 0 -and $lockAgeSeconds -gt 120) {
+            Remove-Item -LiteralPath $indexProbe -Force -ErrorAction Stop
+            Write-Host "已清理陈旧 Git index.lock。"
+        } else {
+            Fail "Git index.lock 正在被占用或刚刚创建，请稍后重试。Git 进程数: $($gitProcesses.Count)，锁文件年龄: $([math]::Round($lockAgeSeconds, 1)) 秒。"
+        }
+    }
+
+    try {
+        New-Item -ItemType File -Path $indexProbe -ErrorAction Stop | Out-Null
+        Remove-Item -LiteralPath $indexProbe -Force -ErrorAction Stop
+    } catch {
+        Fail "无法创建 .git\index.lock，Git 暂存区不可写：$($_.Exception.Message)"
+    }
+}
+
+function Invoke-GitWithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [int]$MaxAttempts = 3
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        & git @Arguments
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        if ($attempt -lt $MaxAttempts) {
+            Write-Host "Git 命令失败，准备重试 ${attempt}/${MaxAttempts}: git $($Arguments -join ' ')"
+            Start-Sleep -Seconds (2 * $attempt)
+            Test-GitWriteAccess
+        }
+    }
+
+    Fail "Git 命令失败: git $($Arguments -join ' ')"
+}
+
 Set-Location $projectRoot
 
 if (-not (Test-Path -LiteralPath ".git")) {
@@ -84,8 +143,14 @@ if ($dashboardTargetExists) {
             Copy-Item -LiteralPath $latest.FullName -Destination $sourceTarget -Force
             Write-Host "已同步项目根目录 CSV: $sourceTarget"
         }
-        Write-Host "本次导出 CSV 与当前仪表盘数据一致，跳过提交和推送。"
-        exit 0
+
+        git diff --quiet -- $sourceTarget $dashboardTarget
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "本次导出 CSV 与当前仪表盘数据一致，且工作区无数据差异，跳过提交和推送。"
+            exit 0
+        }
+
+        Write-Host "数据文件内容已同步，但存在未提交的数据差异，继续提交和推送。"
     }
 }
 
@@ -98,7 +163,8 @@ Write-Host "已替换 $sourceTarget"
 Write-Host "已替换 $dashboardTarget"
 
 # 4. Git 提交和推送；本脚本不调用 Vercel
-git add $sourceTarget $dashboardTarget
+Test-GitWriteAccess
+Invoke-GitWithRetry -Arguments @("add", $sourceTarget, $dashboardTarget)
 git diff --cached --quiet -- $sourceTarget $dashboardTarget
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Git 暂存区无数据变化，跳过提交和推送。"
@@ -108,15 +174,8 @@ if ($LASTEXITCODE -eq 0) {
 $dateStr = Get-Date -Format 'yyyy-MM-dd'
 $commitMsg = "Auto-update B站 video data $dateStr"
 
-git commit -m $commitMsg
-if ($LASTEXITCODE -ne 0) {
-    Fail "Git commit 失败。"
-}
-
-git push origin master
-if ($LASTEXITCODE -ne 0) {
-    Fail "Git push 失败。"
-}
+Invoke-GitWithRetry -Arguments @("commit", "-m", $commitMsg)
+Invoke-GitWithRetry -Arguments @("push", "origin", "master")
 
 Write-Host "推送完成: $commitMsg"
 

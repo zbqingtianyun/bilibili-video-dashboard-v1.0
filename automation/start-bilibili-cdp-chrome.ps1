@@ -79,6 +79,17 @@ function Get-CdpOwnerProcess {
     return Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
 }
 
+function Test-CdpVersionEndpoint {
+    param([int]$PortToCheck)
+
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$PortToCheck/json/version" -TimeoutSec 2
+        return ($response.StatusCode -eq 200 -and $response.Content -like "*webSocketDebuggerUrl*")
+    } catch {
+        return $false
+    }
+}
+
 function Get-DedicatedChromeProcesses {
     param([string]$ProfileRoot)
 
@@ -196,6 +207,9 @@ if (Test-CdpPort -PortToCheck $Port) {
             Stop-DedicatedChrome -ProfileRoot $ProfileDir
             Start-Sleep -Seconds 2
         }
+    } elseif (-not $owner -and $CheckOnly -and (Test-CdpStable -PortToCheck $Port) -and (Test-CdpVersionEndpoint -PortToCheck $Port)) {
+        Write-Host "CDP 已可用，但当前权限无法读取监听进程命令行，跳过 profile 参数复核: http://127.0.0.1:$Port"
+        exit 0
     } elseif ($owner) {
         throw "端口 $Port 已被非 B站专用 Chrome 占用，进程 $($owner.ProcessId)。"
     }
