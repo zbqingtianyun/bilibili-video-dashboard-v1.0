@@ -11,6 +11,7 @@ param(
     [int]$Port = 9222,
     [string]$ProjectRoot = "F:\zhangbin_codex\b站数据看板1.0版本",
     [string]$ProfileDir = "F:\zhangbin_codex\b站数据看板1.0版本\.chrome-bilibili-profile",
+    [int]$StartupTimeoutSeconds = 90,
     [switch]$Restart,
     [switch]$CheckOnly
 )
@@ -78,11 +79,17 @@ function Get-CdpOwnerProcess {
     return Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
 }
 
+function Get-DedicatedChromeProcesses {
+    param([string]$ProfileRoot)
+
+    return Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$ProfileRoot*" }
+}
+
 function Stop-DedicatedChrome {
     param([string]$ProfileRoot)
 
-    $processes = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*$ProfileRoot*" }
+    $processes = Get-DedicatedChromeProcesses -ProfileRoot $ProfileRoot
 
     foreach ($process in $processes) {
         Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
@@ -193,8 +200,7 @@ if (Test-CdpPort -PortToCheck $Port) {
         throw "端口 $Port 已被非 B站专用 Chrome 占用，进程 $($owner.ProcessId)。"
     }
 } else {
-    $staleDedicatedChrome = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*$ProfileDir*" }
+    $staleDedicatedChrome = Get-DedicatedChromeProcesses -ProfileRoot $ProfileDir
 
     if ($staleDedicatedChrome -and -not $CheckOnly) {
         Write-Host "检测到 CDP 专用 Chrome 残留进程但端口不可用，正在清理后重启。"
@@ -209,6 +215,7 @@ if ($CheckOnly) {
 }
 
 $chromeExe = Find-ChromeExe
+$chromeVersion = (Get-Item -LiteralPath $chromeExe).VersionInfo.ProductVersion
 $args = @(
     "--remote-debugging-port=$Port",
     "--remote-debugging-address=127.0.0.1",
@@ -222,9 +229,11 @@ $args = @(
     "https://member.bilibili.com/platform/data-up/video/"
 )
 
-Start-Process -FilePath $chromeExe -ArgumentList $args -WindowStyle Hidden | Out-Null
+Write-Host "Chrome: $chromeExe ($chromeVersion)"
+Write-Host "正在启动 CDP 专用 Chrome，最长等待 $StartupTimeoutSeconds 秒。"
+$chromeProcess = Start-Process -FilePath $chromeExe -ArgumentList $args -WindowStyle Hidden -PassThru
 
-$deadline = (Get-Date).AddSeconds(25)
+$deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
 while ((Get-Date) -lt $deadline) {
     if (Test-CdpPort -PortToCheck $Port) {
         $owner = Get-CdpOwnerProcess -PortToCheck $Port
@@ -235,8 +244,23 @@ while ((Get-Date) -lt $deadline) {
             exit 0
         }
     }
+
+    if ($chromeProcess -and $chromeProcess.HasExited) {
+        $dedicatedProcesses = @(Get-DedicatedChromeProcesses -ProfileRoot $ProfileDir)
+        if ($dedicatedProcesses.Count -eq 0) {
+            throw "Chrome 启动后已退出，未留下专用 Chrome 进程。进程 ID: $($chromeProcess.Id)，退出码: $($chromeProcess.ExitCode)。"
+        }
+    }
+
     Start-Sleep -Milliseconds 500
 }
 
-throw "Chrome 已启动但 CDP 端口未在 25 秒内可用：http://127.0.0.1:$Port"
+$remainingProcesses = @(Get-DedicatedChromeProcesses -ProfileRoot $ProfileDir)
+$processSummary = if ($remainingProcesses.Count -gt 0) {
+    ($remainingProcesses | Select-Object -First 5 | ForEach-Object { "$($_.ProcessId): $($_.CommandLine)" }) -join "`n"
+} else {
+    "未找到使用 $ProfileDir 的专用 Chrome 进程。"
+}
+
+throw "Chrome 已启动但 CDP 端口未在 $StartupTimeoutSeconds 秒内可用：http://127.0.0.1:$Port`n$processSummary"
 
