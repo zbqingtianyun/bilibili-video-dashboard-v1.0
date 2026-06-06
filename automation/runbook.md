@@ -28,6 +28,8 @@ powershell -ExecutionPolicy Bypass -File automation\start-bilibili-cdp-chrome.ps
 该脚本负责：
 - 检查 `http://127.0.0.1:9222` 是否已可用。
 - 不可用时启动专用 Chrome。
+- 如果检测到专用 Chrome 残留进程但 `9222` 没有监听，会自动清理残留进程并重启。
+- 只有连续多次 CDP 探活成功、且确认端口属于专用 profile 后，才会报告启动成功。
 - 使用 profile：`F:\zhangbin_codex\b站数据看板1.0版本\.chrome-bilibili-profile`。
 - 将下载目录固定为项目根目录。
 - 在专用 profile 中关闭 Chrome 对 B站 CSV 下载的安全拦截，避免出现“出于安全原因”导致 CSV 下载失败。
@@ -89,6 +91,7 @@ powershell -ExecutionPolicy Bypass -File automation\bilibili-update.ps1 -RunStar
 
 ## 失败处理
 - CDP 端口不可用：运行 `automation\start-bilibili-cdp-chrome.ps1` 启动专用 Chrome，再连接 `http://127.0.0.1:9222`。
+- CDP 请求出现 `ECONNREFUSED` / `connection refused`：停止当前 CDP 连接，运行 `powershell -ExecutionPolicy Bypass -File automation\start-bilibili-cdp-chrome.ps1 -Restart` 强制重建专用 Chrome，确认 `-CheckOnly` 成功后再重试一次；仍失败则停止并报告。
 - CDP 专用 Chrome 停在登录页或无法进入创作中心：停止任务并报告，需要用户在 `.chrome-bilibili-profile` 对应 Chrome 窗口中完成登录。
 - 登录失效：停止任务，要求手动在 Chrome 登录 B站后重试。
 - 验证码或二次验证：停止任务，不尝试绕过。
