@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "automation:chrome": "node scripts/takeover-current-chrome.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
@@ -15,6 +16,7 @@
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.468.0",
     "papaparse": "^5.4.1",
+    "playwright": "^1.60.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
