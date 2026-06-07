@@ -10,16 +10,22 @@ import {
   RefreshCcw,
   Search,
   Sparkles,
+  TrendingDown,
+  TrendingUp,
   UsersRound
 } from "lucide-react";
 import {
   buildSummary,
+  computeDeltas,
   formatCompact,
+  formatDelta,
   formatPercent,
   loadDefaultVideos,
+  loadPrevVideos,
   sortMetricLabels,
   sortVideos,
   type SortMetric,
+  type VideoDelta,
   type VideoMetric
 } from "./data";
 
@@ -56,13 +62,28 @@ function interactionInsight(video: VideoMetric): string {
   return "表现稳定，可继续观察同类选题。";
 }
 
+function DeltaBadge({ delta, isPercent }: { delta: number; isPercent?: boolean }) {
+  if (Math.abs(delta) < 0.0001) {
+    return <span className="delta-zero">&mdash;</span>;
+  }
+  const up = delta > 0;
+  const Icon = up ? TrendingUp : TrendingDown;
+  return (
+    <span className={`delta-badge ${up ? "delta-up" : "delta-down"}`}>
+      <Icon size={13} />
+      {formatDelta(delta, isPercent)}
+    </span>
+  );
+}
+
 function KpiCard({
   icon,
   label,
   value,
   caption,
   tone = "pink",
-  delay = 0
+  delay = 0,
+  delta
 }: {
   icon: React.ReactNode;
   label: string;
@@ -70,6 +91,7 @@ function KpiCard({
   caption: string;
   tone?: "pink" | "blue" | "green" | "orange";
   delay?: number;
+  delta?: number;
 }) {
   return (
     <motion.section
@@ -81,6 +103,7 @@ function KpiCard({
       <div className="kpi-top">
         <span className="kpi-icon">{icon}</span>
         <span>{label}</span>
+        {delta !== undefined && <DeltaBadge delta={delta} />}
       </div>
       <strong>{value}</strong>
       <p>{caption}</p>
@@ -117,27 +140,33 @@ function ChartPanel({
 
 function App() {
   const [videos, setVideos] = useState<VideoMetric[]>([]);
+  const [prevVideos, setPrevVideos] = useState<VideoMetric[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [sortMetric, setSortMetric] = useState<SortMetric>("views");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("正在加载默认 CSV 数据...");
 
   useEffect(() => {
-    loadDefaultVideos()
-      .then((items) => {
+    Promise.all([loadDefaultVideos(), loadPrevVideos()])
+      .then(([items, prevItems]) => {
         setVideos(items);
+        setPrevVideos(prevItems);
         setSelectedId(items[0]?.id ?? "");
-        setStatus(`已载入 ${items.length} 条视频数据`);
+        const deltaInfo = prevItems.length
+          ? "，检测到上一版数据，已计算变化"
+          : "";
+        setStatus(`已载入 ${items.length} 条视频数据${deltaInfo}`);
       })
       .catch((error) => {
         setStatus(error instanceof Error ? error.message : "CSV 加载失败");
       });
   }, []);
 
+  const deltas = useMemo(() => computeDeltas(videos, prevVideos), [videos, prevVideos]);
   const sortedVideos = useMemo(() => sortVideos(videos, sortMetric), [videos, sortMetric]);
   const selectedVideo =
     videos.find((video) => video.id === selectedId) ?? sortedVideos[0] ?? null;
-  const summary = useMemo(() => buildSummary(videos), [videos]);
+  const summary = useMemo(() => buildSummary(videos, deltas), [videos, deltas]);
   const filteredVideos = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) {
@@ -172,134 +201,85 @@ function App() {
     yAxis: {
       type: "category",
       data: rankedVideos.map((video) => shortTitle(video.title)),
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: mutedText, width: 120, overflow: "truncate" }
+      axisLine: { lineStyle: { color: gridLine } },
+      axisLabel: { color: chartText, width: 128, overflow: "truncate" }
     },
     series: [
       {
+        name: "播放量",
         type: "bar",
-        data: rankedVideos.map((video) => ({
-          value: video.views,
-          itemStyle: {
-            color:
-              selectedVideo?.id === video.id
-                ? pink
-                : {
-                    type: "linear",
-                    x: 0,
-                    y: 0,
-                    x2: 1,
-                    y2: 0,
-                    colorStops: [
-                      { offset: 0, color: "rgba(69,163,255,0.36)" },
-                      { offset: 1, color: "rgba(69,163,255,0.88)" }
-                    ]
-                  },
-            borderRadius: [0, 12, 12, 0]
-          }
-        })),
-        barWidth: 18,
-        emphasis: { focus: "series" }
-      }
-    ]
-  };
-
-  const qualityOption = {
-    backgroundColor: "transparent",
-    grid: { left: 48, right: 24, top: 28, bottom: 42 },
-    tooltip: {
-      backgroundColor: "rgba(12,15,24,0.96)",
-      borderColor: "rgba(69,163,255,0.32)",
-      textStyle: { color: chartText },
-      formatter: (param: any) => {
-        const item = videos[param.dataIndex];
-        return `<b>${item.title}</b><br/>播放量：${formatCompact(item.views)}<br/>平均播放进度：${formatPercent(
-          item.averageProgress
-        )}<br/>互动量：${item.interactionTotal}<br/>${interactionInsight(item)}`;
-      }
-    },
-    xAxis: {
-      name: "播放量",
-      nameTextStyle: { color: mutedText },
-      splitLine: { lineStyle: { color: gridLine } },
-      axisLabel: { color: mutedText, formatter: (value: number) => formatCompact(value) }
-    },
-    yAxis: {
-      name: "平均播放进度",
-      nameTextStyle: { color: mutedText },
-      splitLine: { lineStyle: { color: gridLine } },
-      axisLabel: { color: mutedText, formatter: (value: number) => formatPercent(value, 0) }
-    },
-    series: [
-      {
-        type: "scatter",
-        symbolSize: (data: number[]) => Math.max(18, Math.min(54, 18 + data[2] * 4)),
-        data: videos.map((video) => [video.views, video.averageProgress, video.interactionTotal]),
+        data: rankedVideos.map((video) => video.views),
         itemStyle: {
-          color: (param: any) => (videos[param.dataIndex]?.id === selectedId ? pink : green),
-          shadowBlur: 24,
-          shadowColor: "rgba(62,226,143,0.28)"
-        }
+          borderRadius: [0, 6, 6, 0],
+          color: (() => {
+            const echarts = (window as any).echarts;
+            return echarts?.graphic?.LinearGradient
+              ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                  { offset: 0, color: pink },
+                  { offset: 1, color: blue }
+                ])
+              : pink;
+          })()
+        },
+        barWidth: 22,
+        emphasis: { itemStyle: { color: pink } }
       }
     ]
   };
 
-  const interactionOption = {
+  const retentionOption = {
     backgroundColor: "transparent",
-    legend: { top: 0, right: 0, textStyle: { color: mutedText } },
-    grid: { left: 18, right: 12, top: 42, bottom: 24, containLabel: true },
     tooltip: {
       trigger: "axis",
-      axisPointer: { type: "shadow" },
       backgroundColor: "rgba(12,15,24,0.96)",
-      borderColor: "rgba(255,255,255,0.14)",
+      borderColor: "rgba(251,114,153,0.28)",
       textStyle: { color: chartText }
     },
+    grid: { left: 14, right: 14, top: 26, bottom: 28 },
     xAxis: {
       type: "category",
       data: sortedVideos.map((video) => shortTitle(video.title)),
-      axisLabel: { color: mutedText, rotate: 26 },
-      axisTick: { show: false },
-      axisLine: { lineStyle: { color: gridLine } }
+      axisLine: { lineStyle: { color: gridLine } },
+      axisLabel: { color: mutedText, rotate: 18 }
     },
     yAxis: {
       type: "value",
-      splitLine: { lineStyle: { color: gridLine } },
-      axisLabel: { color: mutedText }
+      max: 1,
+      axisLabel: { color: mutedText, formatter: (v: number) => formatPercent(v, 0) },
+      splitLine: { lineStyle: { color: gridLine } }
     },
     series: [
-      { name: "点赞", type: "bar", stack: "total", data: sortedVideos.map((v) => v.likes), itemStyle: { color: pink } },
-      { name: "收藏", type: "bar", stack: "total", data: sortedVideos.map((v) => v.favorites), itemStyle: { color: blue } },
-      { name: "评论", type: "bar", stack: "total", data: sortedVideos.map((v) => v.comments), itemStyle: { color: green } },
-      { name: "投币", type: "bar", stack: "total", data: sortedVideos.map((v) => v.coins), itemStyle: { color: orange } },
-      { name: "弹幕", type: "bar", stack: "total", data: sortedVideos.map((v) => v.danmaku), itemStyle: { color: "#c2f970" } },
-      { name: "转发", type: "bar", stack: "total", data: sortedVideos.map((v) => v.shares), itemStyle: { color: "#9b8cff" } }
+      {
+        name: "3秒跳出率",
+        type: "bar",
+        data: sortedVideos.map((video) => video.threeSecondDropRate),
+        itemStyle: { color: pink, borderRadius: [6, 6, 0, 0] },
+        barGap: "30%"
+      },
+      {
+        name: "平均播放进度",
+        type: "bar",
+        data: sortedVideos.map((video) => video.averageProgress),
+        itemStyle: { color: green, borderRadius: [6, 6, 0, 0] }
+      }
     ]
   };
 
   const clickDropOption = {
     backgroundColor: "transparent",
+    tooltip: { trigger: "item", backgroundColor: "rgba(12,15,24,0.96)", borderColor: "rgba(251,114,153,0.28)" },
     radar: {
-      radius: "65%",
-      splitNumber: 4,
-      axisName: { color: mutedText },
-      splitLine: { lineStyle: { color: gridLine } },
-      splitArea: { areaStyle: { color: ["rgba(255,255,255,0.015)", "rgba(255,255,255,0.035)"] } },
-      axisLine: { lineStyle: { color: gridLine } },
+      center: ["50%", "50%"],
+      radius: "62%",
       indicator: [
         { name: "封标点击", max: 5 },
-        { name: "粉丝点击", max: 5 },
-        { name: "游客点击", max: 5 },
-        { name: "低跳出", max: 1 },
-        { name: "互动率", max: 0.08 },
-        { name: "完播进度", max: 0.5 }
-      ]
-    },
-    tooltip: {
-      backgroundColor: "rgba(12,15,24,0.96)",
-      borderColor: "rgba(251,114,153,0.28)",
-      textStyle: { color: chartText }
+        { name: "播放进度", max: 1 },
+        { name: "互动率", max: 0.1 }
+      ],
+      axisName: { color: mutedText, fontSize: 11 },
+      splitArea: { areaStyle: { color: [gridLine, gridLine, gridLine, gridLine, gridLine] } },
+      splitLine: { lineStyle: { color: gridLine } },
+      axisLine: { lineStyle: { color: gridLine } }
     },
     series: [
       {
@@ -309,66 +289,133 @@ function App() {
               {
                 value: [
                   selectedVideo.coverClickScore,
-                  selectedVideo.fanClickScore,
-                  selectedVideo.visitorClickScore,
-                  1 - selectedVideo.threeSecondDropRate,
-                  selectedVideo.engagementRate,
-                  selectedVideo.averageProgress
+                  selectedVideo.averageProgress,
+                  selectedVideo.engagementRate
                 ],
                 name: selectedVideo.title,
-                areaStyle: { color: "rgba(251,114,153,0.22)" },
-                lineStyle: { color: pink, width: 2 },
-                itemStyle: { color: pink }
+                areaStyle: { color: pink, opacity: 0.18 },
+                lineStyle: { color: pink, width: 2 }
               }
             ]
-          : []
+          : [],
+        symbol: "circle",
+        symbolSize: 8
       }
     ]
   };
 
-  function handleChartClick(params: any) {
-    const index = params.dataIndex;
-    const video = rankedVideos[index] ?? videos[index] ?? sortedVideos[index];
-    if (video) {
-      setSelectedId(video.id);
-    }
-  }
+  const qualityOption = {
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "rgba(12,15,24,0.96)",
+      borderColor: "rgba(251,114,153,0.28)",
+      textStyle: { color: chartText },
+      formatter: (params: any) => {
+        const item = videos[params.dataIndex];
+        return `<b>${item.title}</b><br/>播放量：${formatCompact(item.views)}<br/>进度：${formatPercent(
+          item.averageProgress
+        )}<br/>互动：${item.interactionTotal}`;
+      }
+    },
+    grid: { left: 54, right: 26, top: 18, bottom: 28 },
+    xAxis: {
+      name: "播放量",
+      nameLocation: "center",
+      nameGap: 32,
+      nameTextStyle: { color: mutedText },
+      type: "value",
+      axisLabel: { color: mutedText, formatter: (v: number) => formatCompact(v) },
+      splitLine: { lineStyle: { color: gridLine } }
+    },
+    yAxis: {
+      name: "平均播放进度",
+      nameLocation: "center",
+      nameGap: 40,
+      nameTextStyle: { color: mutedText },
+      type: "value",
+      max: 1,
+      axisLabel: { color: mutedText, formatter: (v: number) => formatPercent(v, 0) },
+      splitLine: { lineStyle: { color: gridLine } }
+    },
+    series: [
+      {
+        type: "scatter",
+        data: videos.map((video) => [video.views, video.averageProgress]),
+        symbolSize: (val: number[]) => {
+          const item = videos.find((v) => v.views === val[0]);
+          return Math.max(12, Math.min(52, (item?.interactionTotal ?? 0) * 0.4 + 9));
+        },
+        itemStyle: {
+          color: pink,
+          borderColor: "rgba(251,114,153,0.35)",
+          borderWidth: 2,
+          opacity: 0.88
+        }
+      }
+    ]
+  };
+
+  const interactionOption = {
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "rgba(12,15,24,0.96)",
+      borderColor: "rgba(251,114,153,0.28)",
+      textStyle: { color: chartText }
+    },
+    grid: { left: 14, right: 14, top: 14, bottom: 28 },
+    xAxis: {
+      type: "category",
+      data: sortedVideos.map((video) => shortTitle(video.title)),
+      axisLine: { lineStyle: { color: gridLine } },
+      axisLabel: { color: mutedText, rotate: 18 }
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: mutedText },
+      splitLine: { lineStyle: { color: gridLine } }
+    },
+    series: [
+      { name: "点赞", type: "bar", data: sortedVideos.map((v) => v.likes), stack: "interact", itemStyle: { color: pink }, barWidth: 20 },
+      { name: "评论", type: "bar", data: sortedVideos.map((v) => v.comments), stack: "interact", itemStyle: { color: blue } },
+      { name: "弹幕", type: "bar", data: sortedVideos.map((v) => v.danmaku), stack: "interact", itemStyle: { color: green } },
+      { name: "收藏", type: "bar", data: sortedVideos.map((v) => v.favorites), stack: "interact", itemStyle: { color: orange } },
+      { name: "投币", type: "bar", data: sortedVideos.map((v) => v.coins), stack: "interact", itemStyle: { color: "#c084fc" } },
+      { name: "转发", type: "bar", data: sortedVideos.map((v) => v.shares), stack: "interact", itemStyle: { color: "#fbbf24" } }
+    ]
+  };
+
+  const handleChartClick = (params: any) => {
+    const item = rankedVideos[params.dataIndex];
+    if (item) setSelectedId(item.id);
+  };
 
   return (
     <main className="app-shell">
+      <div className="grain" />
       <div className="orb orb-pink" />
       <div className="orb orb-blue" />
-      <div className="grain" />
 
-      <motion.header
-        className="hero"
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
-      >
+      <header className="hero">
         <div>
-          <div className="eyebrow">
-            <Sparkles size={16} />
-            黑曜数据舱 · Bilibili Video Intelligence
-          </div>
-          <h1>B站视频表现驾驶舱</h1>
+          <span className="eyebrow">
+            <Flame size={15} /> Bilibili Creator Cockpit
+          </span>
+          <h1>B站视频<br />表现驾驶舱</h1>
           <p>
-            用真实 CSV 数据追踪播放、点击、留存、互动与粉丝转化，让每条视频的表现差异变得一眼可见。
+            基于导出 CSV 构建的创作者数据面板。覆盖播放、留存、互动和涨粉四大维度，帮助你快速发现高价值选题与优化方向。
           </p>
         </div>
         <div className="hero-actions">
           <span className="status-pill">
-            <Clock3 size={15} />
-            {summary.dateRange}
+            <CircleDot size={13} color={green} />
+            {status}
           </span>
         </div>
-      </motion.header>
+      </header>
 
-      <section className="command-bar">
-        <div className="status-copy">
-          <CircleDot size={16} />
-          {status}
-        </div>
+      <div className="command-bar">
         <div className="segmented">
           {metricOptions.map((metric) => (
             <button
@@ -380,45 +427,52 @@ function App() {
             </button>
           ))}
         </div>
-      </section>
+      </div>
 
       <section className="kpi-grid">
         <KpiCard
-          icon={<Flame size={18} />}
+          icon={<BarChart3 size={18} />}
           label="总播放量"
           value={formatCompact(summary.totalViews)}
-          caption={`最高播放：${summary.bestVideo ? shortTitle(summary.bestVideo.title) : "暂无"}`}
+          caption={`${summary.totalViews.toLocaleString("zh-CN")} 次，环比变化 ${summary.totalViewsDelta >= 0 ? "+" : ""}${formatCompact(Math.abs(summary.totalViewsDelta))}`}
           tone="pink"
-          delay={0.04}
+          delay={0}
+          delta={summary.totalViewsDelta}
         />
         <KpiCard
-          icon={<BarChart3 size={18} />}
-          label="平均播放"
-          value={formatCompact(summary.averageViews)}
-          caption={`${videos.length} 条近期稿件参与计算`}
-          tone="blue"
-          delay={0.1}
-        />
-        <KpiCard
-          icon={<Activity size={18} />}
+          icon={<Clock3 size={18} />}
           label="平均播放进度"
           value={formatPercent(summary.averageProgress)}
-          caption={`留存最佳：${summary.topRetentionVideo ? shortTitle(summary.topRetentionVideo.title) : "暂无"}`}
+          caption={`${summary.averageProgress >= 0.35 ? "超过 35% 基准线" : "低于 35% 基准线"}，${summary.dateRange}`}
+          tone="blue"
+          delay={0.08}
+        />
+        <KpiCard
+          icon={<Sparkles size={18} />}
+          label="平均互动率"
+          value={formatPercent(summary.averageEngagementRate)}
+          caption={
+            summary.averageEngagementDelta !== 0
+              ? `环比 ${formatDelta(summary.averageEngagementDelta, true)}`
+              : "与上一版持平"
+          }
           tone="green"
           delay={0.16}
+          delta={summary.averageEngagementDelta}
         />
         <KpiCard
           icon={<UsersRound size={18} />}
           label="总涨粉量"
           value={formatCompact(summary.totalFollowers)}
-          caption={`平均互动率 ${formatPercent(summary.averageEngagementRate)}`}
+          caption={`净增长 ${summary.totalFollowers} 人`}
           tone="orange"
-          delay={0.22}
+          delay={0.24}
+          delta={summary.totalFollowersDelta}
         />
       </section>
 
       <section className="dashboard-grid">
-        <ChartPanel title="爆款雷达排行" eyebrow={`按 ${sortMetricLabels[sortMetric]} 排序`} className="span-7">
+        <ChartPanel title="播放量排行" eyebrow="Bar Chart" className="span-7">
           <ReactECharts
             option={rankingOption}
             className="chart chart-large"
@@ -465,7 +519,7 @@ function App() {
           <ReactECharts option={clickDropOption} className="chart chart-radar" notMerge />
         </ChartPanel>
 
-        <ChartPanel title="播放质量象限" eyebrow="播放量 × 平均播放进度 × 互动量" className="span-6">
+        <ChartPanel title="播放质量象限" eyebrow="播放量 x 平均播放进度 x 互动量" className="span-6">
           <ReactECharts
             option={qualityOption}
             className="chart"
@@ -515,25 +569,47 @@ function App() {
               </tr>
             </thead>
             <tbody>
-              {filteredVideos.map((video) => (
-                <tr
-                  key={video.id}
-                  className={selectedVideo?.id === video.id ? "selected" : ""}
-                  onClick={() => setSelectedId(video.id)}
-                >
-                  <td>
-                    <b>{video.title}</b>
-                    <small>{video.publishedLabel}</small>
-                  </td>
-                  <td>{formatCompact(video.views)}</td>
-                  <td>{video.coverClickScore.toFixed(1)} 星</td>
-                  <td>{formatPercent(video.threeSecondDropRate)}</td>
-                  <td>{formatPercent(video.engagementRate)}</td>
-                  <td>{formatPercent(video.averageProgress)}</td>
-                  <td>{video.followerGain}</td>
-                  <td>{video.interactionTotal}</td>
-                </tr>
-              ))}
+              {filteredVideos.map((video) => {
+                const d = deltas.get(video.title);
+                return (
+                  <tr
+                    key={video.id}
+                    className={selectedVideo?.id === video.id ? "selected" : ""}
+                    onClick={() => setSelectedId(video.id)}
+                  >
+                    <td>
+                      <b>{video.title}</b>
+                      <small>{video.publishedLabel}</small>
+                      {d && d.views !== 0 && (
+                        <span className={`td-delta ${d.views > 0 ? "delta-up" : "delta-down"}`}>
+                          {d.views > 0 ? "\u2191" : "\u2193"}{formatCompact(Math.abs(d.views))}
+                        </span>
+                      )}
+                    </td>
+                    <td>{formatCompact(video.views)}</td>
+                    <td>{video.coverClickScore.toFixed(1)} 星</td>
+                    <td>{formatPercent(video.threeSecondDropRate)}</td>
+                    <td>
+                      {formatPercent(video.engagementRate)}
+                      {d && d.engagementRate !== 0 && (
+                        <span className={`td-delta ${d.engagementRate > 0 ? "delta-up" : "delta-down"}`}>
+                          {d.engagementRate > 0 ? "\u2191" : "\u2193"}{Math.abs(d.engagementRate * 100).toFixed(1)}pp
+                        </span>
+                      )}
+                    </td>
+                    <td>{formatPercent(video.averageProgress)}</td>
+                    <td>
+                      {video.followerGain}
+                      {d && d.followerGain !== 0 && (
+                        <span className={`td-delta ${d.followerGain > 0 ? "delta-up" : "delta-down"}`}>
+                          {d.followerGain > 0 ? "\u2191" : "\u2193"}{Math.abs(d.followerGain)}
+                        </span>
+                      )}
+                    </td>
+                    <td>{video.interactionTotal}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -541,7 +617,7 @@ function App() {
 
       <footer>
         <RefreshCcw size={14} />
-        所有图表和指标均由 CSV 真实字段计算：播放、点击、跳出、互动、涨粉与播放进度。
+        所有图表和指标均由 CSV 真实字段计算：播放、点击、跳出、互动、涨粉与播放进度。{deltas.size > 0 ? "  \u2191\u2193 标注为相对上一版 CSV 的变化。" : ""}
       </footer>
     </main>
   );

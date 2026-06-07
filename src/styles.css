@@ -579,3 +579,58 @@ footer {
     height: 310px;
   }
 }
+
+/* ==== 变化指示 ==== */
+.delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.delta-up {
+  color: var(--green);
+  background: rgba(62, 226, 143, 0.12);
+}
+
+.delta-down {
+  color: var(--pink);
+  background: rgba(251, 114, 153, 0.12);
+}
+
+.delta-zero {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.td-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+td .td-delta.delta-up {
+  color: var(--green);
+  background: rgba(62, 226, 143, 0.1);
+}
+
+td .td-delta.delta-down {
+  color: var(--pink);
+  background: rgba(251, 114, 153, 0.1);
+}

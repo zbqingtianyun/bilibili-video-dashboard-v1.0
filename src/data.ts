@@ -70,6 +70,15 @@ export type VideoMetric = {
   qualityScore: number;
 };
 
+export type VideoDelta = {
+  views: number;
+  engagementRate: number;
+  followerGain: number;
+  coverClickScore: number;
+  averageProgress: number;
+  likes: number;
+};
+
 export type DashboardSummary = {
   totalViews: number;
   averageViews: number;
@@ -80,6 +89,10 @@ export type DashboardSummary = {
   bestVideo: VideoMetric | null;
   topRetentionVideo: VideoMetric | null;
   dateRange: string;
+  /* 相对上一版的聚合变化 */
+  totalViewsDelta: number;
+  averageEngagementDelta: number;
+  totalFollowersDelta: number;
 };
 
 export type SortMetric =
@@ -161,14 +174,23 @@ export function parseChineseDate(value: string): Date | null {
 }
 
 export function formatPercent(value: number, digits = 1): string {
-  return `${(value * 100).toFixed(digits)}%`;
+  return (value * 100).toFixed(digits) + "%";
 }
 
 export function formatCompact(value: number): string {
   if (value >= 10000) {
-    return `${(value / 10000).toFixed(1)}万`;
+    return (value / 10000).toFixed(1) + "万";
   }
   return Math.round(value).toLocaleString("zh-CN");
+}
+
+export function formatDelta(value: number, isPercent?: boolean): string {
+  if (value === 0) return "—";
+  const sign = value > 0 ? "+" : "";
+  if (isPercent) {
+    return sign + (value * 100).toFixed(1) + "pp";
+  }
+  return sign + formatCompact(Math.abs(value));
 }
 
 export function normalizeRow(row: RawVideoRow, index: number): VideoMetric {
@@ -186,7 +208,7 @@ export function normalizeRow(row: RawVideoRow, index: number): VideoMetric {
   const interactionTotal = likes + comments + danmaku + favorites + coins + shares;
 
   return {
-    id: `${index}-${row.视频标题}`,
+    id: index + "-" + row.视频标题,
     title: row.视频标题.trim().replace(/，$/, ""),
     publishedAt,
     publishedLabel: row.发布时间,
@@ -252,12 +274,42 @@ export function parseCsv(text: string): VideoMetric[] {
 export async function loadDefaultVideos(): Promise<VideoMetric[]> {
   const response = await fetch("/data/recent-videos.csv");
   if (!response.ok) {
-    throw new Error(`CSV 加载失败：${response.status}`);
+    throw new Error("CSV 加载失败：" + response.status);
   }
   return parseCsv(await response.text());
 }
 
-export function buildSummary(videos: VideoMetric[]): DashboardSummary {
+export async function loadPrevVideos(): Promise<VideoMetric[]> {
+  const response = await fetch("/data/recent-videos-prev.csv");
+  if (!response.ok) {
+    return [];
+  }
+  return parseCsv(await response.text());
+}
+
+/** 按视频标题匹配，计算每个视频关键指标的差值 */
+export function computeDeltas(
+  current: VideoMetric[],
+  previous: VideoMetric[]
+): Map<string, VideoDelta> {
+  const map = new Map<string, VideoDelta>();
+  const prevByTitle = new Map(previous.map((v) => [v.title, v]));
+  for (const cur of current) {
+    const prev = prevByTitle.get(cur.title);
+    if (!prev) continue;
+    map.set(cur.title, {
+      views: cur.views - prev.views,
+      engagementRate: cur.engagementRate - prev.engagementRate,
+      followerGain: cur.followerGain - prev.followerGain,
+      coverClickScore: cur.coverClickScore - prev.coverClickScore,
+      averageProgress: cur.averageProgress - prev.averageProgress,
+      likes: cur.likes - prev.likes
+    });
+  }
+  return map;
+}
+
+export function buildSummary(videos: VideoMetric[], deltas?: Map<string, VideoDelta>): DashboardSummary {
   const totalViews = videos.reduce((sum, item) => sum + item.views, 0);
   const totalFollowers = videos.reduce((sum, item) => sum + item.followerGain, 0);
   const averageViews = videos.length ? totalViews / videos.length : 0;
@@ -272,9 +324,23 @@ export function buildSummary(videos: VideoMetric[]): DashboardSummary {
     .filter(Boolean)
     .sort((a, b) => a!.getTime() - b!.getTime()) as Date[];
   const formatDate = (date: Date) =>
-    `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(
+    date.getFullYear() + "." + String(date.getMonth() + 1).padStart(2, "0") + "." + String(
       date.getDate()
-    ).padStart(2, "0")}`;
+    ).padStart(2, "0");
+
+  let totalViewsDelta = 0;
+  let totalFollowersDelta = 0;
+  let averageEngagementDelta = 0;
+  if (deltas) {
+    for (const d of deltas.values()) {
+      totalViewsDelta += d.views;
+      totalFollowersDelta += d.followerGain;
+      averageEngagementDelta += d.engagementRate;
+    }
+    if (deltas.size > 0) {
+      averageEngagementDelta /= deltas.size;
+    }
+  }
 
   return {
     totalViews,
@@ -287,8 +353,11 @@ export function buildSummary(videos: VideoMetric[]): DashboardSummary {
     topRetentionVideo:
       [...videos].sort((a, b) => b.averageProgress - a.averageProgress)[0] ?? null,
     dateRange: sortedDates.length
-      ? `${formatDate(sortedDates[0])} - ${formatDate(sortedDates[sortedDates.length - 1])}`
-      : "暂无时间范围"
+      ? formatDate(sortedDates[0]) + " - " + formatDate(sortedDates[sortedDates.length - 1])
+      : "暂无时间范围",
+    totalViewsDelta,
+    averageEngagementDelta,
+    totalFollowersDelta
   };
 }
 
